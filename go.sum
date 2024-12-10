@@ -1,0 +1,10 @@
+github.com/taruti/binp v0.0.0-20160923074924-983014bd3f70 h1:Qup51sLZ9fzeLE5e2OOEAgi7c5L5YT84jHLHzSHSkwg=
+github.com/taruti/binp v0.0.0-20160923074924-983014bd3f70/go.mod h1:fPB4mo0AsEbIk6aGZu//GxxKWvahFds65YeY0mUlyPY=
+github.com/taruti/bytepool v0.0.0-20160310082835-5e3a9ea56543 h1:6Y51mutOvRGRx6KqyMNo//xk8B8o6zW9/RVmy1VamOs=
+github.com/taruti/bytepool v0.0.0-20160310082835-5e3a9ea56543/go.mod h1:jpwqYA8KUVEvSUJHkCXsnBRJCSKP1BMa81QZ6kvRpow=
+golang.org/x/crypto v0.30.0 h1:RwoQn3GkWiMkzlX562cLB7OxWvjH1L8xutO2WoJcRoY=
+golang.org/x/crypto v0.30.0/go.mod h1:kDsLvtWBEx7MV9tJOj9bnXsPbxwJQ6csT/x4KIN4Ssk=
+golang.org/x/sys v0.28.0 h1:Fksou7UEQUWlKvIdsqzJmUmCX3cZuD2+P3XyyzwMhlA=
+golang.org/x/sys v0.28.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
+golang.org/x/term v0.27.0 h1:WP60Sv1nlK1T6SupCHbXzSaN0b9wUmsPoRS9b61A23Q=
+golang.org/x/term v0.27.0/go.mod h1:iMsnZpn0cago0GOrHO2+Y7u7JPn5AylBrcoWkElMTSM=

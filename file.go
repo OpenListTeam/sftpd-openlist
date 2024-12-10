@@ -47,7 +47,7 @@ type FileSystem interface {
 	OpenFile(name string, flags uint32, attr *Attr) (File, error)
 	OpenDir(name string) (Dir, error)
 	Remove(name string) error
-	Rename(old string, new string, flags uint32) error
+	Rename(old, new string, flags uint32) error
 	Mkdir(name string, attr *Attr) error
 	Rmdir(name string) error
 	Stat(name string, islstat bool) (*Attr, error)
@@ -86,4 +86,33 @@ func sftpToFileMode(raw uint32) os.FileMode {
 		// regular
 	}
 	return m
+}
+
+// FileSystemExtensionFileList is a convenience extension to allow to return file listing
+// without requiring to implement the methods Open/Readdir for your custom afero.File
+// From: github.com/fclairamb/ftpserverlib
+type FileSystemExtensionFileList interface {
+	// ReadDir reads the directory named by name and return a list of directory entries.
+	ReadDir(name string, count int) ([]NamedAttr, error)
+}
+
+// FileSystemExtentionFileTransfer is a convenience extension to allow to transfer files
+// without requiring to implement the methods Create/Open/OpenFile for your custom afero.File.
+// From: github.com/fclairamb/ftpserverlib
+type FileSystemExtentionFileTransfer interface {
+	// GetHandle return an handle to upload or download a file based on flags:
+	// os.O_RDONLY indicates a download
+	// os.O_WRONLY indicates an upload and can be combined with os.O_APPEND (resume) or
+	// os.O_CREATE (upload to new file/truncate)
+	//
+	// offset is the argument of a previous REST command, if any, or 0
+	GetHandle(name string, flags uint32, attr *Attr, offset int64) (FileTransfer, error)
+}
+
+// FileTransfer defines the inferface for file transfers.
+// From: github.com/fclairamb/ftpserverlib
+type FileTransfer interface {
+	io.Reader
+	io.Writer
+	io.Closer
 }

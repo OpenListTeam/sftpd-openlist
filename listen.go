@@ -1,9 +1,8 @@
 package sftpd
 
 import (
-	"net"
-
 	"golang.org/x/crypto/ssh"
+	"net"
 )
 
 // Config is the configuration struct for the high level API.
@@ -17,37 +16,47 @@ type Config struct {
 	// LogFunction is used to log errors.
 	// e.g. log.Println has the right type.
 	LogFunc func(v ...interface{})
-	// FileSystem contains the FileSystem used for this server.
-	FileSystem FileSystem
-
-	readyChan chan error
-	connChan  chan net.Listener
 }
 
-// Init inits a Config.
-func (c *Config) Init() {
-	c.readyChan = make(chan error, 1)
-	c.connChan = make(chan net.Listener, 1)
+type SftpDriver interface {
+	GetConfig() *Config
+	GetFileSystem(sc *ssh.ServerConn) (FileSystem, error)
+	Close()
+}
+
+type SftpServer struct {
+	readyChan chan error
+	connChan  chan net.Listener
+	driver    SftpDriver
+}
+
+// NewSftpServer inits a SFTP Server.
+func NewSftpServer(driver SftpDriver) *SftpServer {
+	return &SftpServer{
+		readyChan: make(chan error, 1),
+		connChan:  make(chan net.Listener, 1),
+		driver:    driver,
+	}
 }
 
 // RunServer runs the server using the high level API.
-func (c *Config) RunServer() error {
-	if c.LogFunc == nil {
-		c.LogFunc = func(...interface{}) {}
+func (s *SftpServer) RunServer() error {
+	if s.driver.GetConfig().LogFunc == nil {
+		s.driver.GetConfig().LogFunc = func(...interface{}) {}
 	}
-	e := runServer(c)
+	e := runServer(s)
 	if e != nil {
-		c.LogFunc("sftpd server failed:", e)
+		s.LogFunc("sftpd server failed:", e)
 	}
 	return e
 }
 
-func runServer(c *Config) error {
-	listener, e := net.Listen("tcp", c.HostPort)
-	c.readyChan <- e
-	close(c.readyChan)
-	c.connChan <- listener
-	close(c.connChan)
+func runServer(server *SftpServer) error {
+	listener, e := net.Listen("tcp", server.driver.GetConfig().HostPort)
+	server.readyChan <- e
+	close(server.readyChan)
+	server.connChan <- listener
+	close(server.connChan)
 	if e != nil {
 		return e
 	}
@@ -57,32 +66,32 @@ func runServer(c *Config) error {
 		if e != nil {
 			return e
 		}
-		go handleConn(conn, c)
+		go handleConn(conn, server)
 	}
 }
 
-func handleConn(conn net.Conn, config *Config) {
+func handleConn(conn net.Conn, server *SftpServer) {
 	defer conn.Close()
-	e := doHandleConn(conn, config)
+	e := doHandleConn(conn, server)
 	if e != nil {
-		config.LogFunc("sftpd connection error:", e)
+		server.LogFunc("sftpd connection error:", e)
 	}
 }
 
-func doHandleConn(conn net.Conn, config *Config) error {
-	sc, chans, reqs, e := ssh.NewServerConn(conn, &config.ServerConfig)
+func doHandleConn(conn net.Conn, server *SftpServer) error {
+	sc, chans, reqs, e := ssh.NewServerConn(conn, &server.driver.GetConfig().ServerConfig)
 	if e != nil {
 		return e
 	}
 	defer sc.Close()
 
 	// The incoming Request channel must be serviced.
-	go printDiscardRequests(config, reqs)
+	go printDiscardRequests(server, reqs)
 
 	// Service the incoming Channel channel.
 	for newChannel := range chans {
 		if newChannel.ChannelType() != "session" {
-			newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
+			_ = newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
 			continue
 		}
 		channel, requests, err := newChannel.Accept()
@@ -97,25 +106,27 @@ func doHandleConn(conn net.Conn, config *Config) error {
 				case IsSftpRequest(req):
 					ok = true
 					go func() {
-						e := ServeChannel(channel, config.FileSystem)
+						fs, e := server.driver.GetFileSystem(sc)
+						if e == nil {
+							e = ServeChannel(channel, fs)
+						}
 						if e != nil {
-							config.LogFunc("sftpd servechannel failed:", e)
+							server.LogFunc("sftpd servechannel failed:", e)
 						}
 					}()
 				}
-				req.Reply(ok, nil)
+				_ = req.Reply(ok, nil)
 			}
 		}(requests)
-
 	}
 	return nil
 }
 
-func printDiscardRequests(c *Config, in <-chan *ssh.Request) {
+func printDiscardRequests(c *SftpServer, in <-chan *ssh.Request) {
 	for req := range in {
 		c.LogFunc("sftpd discarding ssh request", req.Type, *req)
 		if req.WantReply {
-			req.Reply(false, nil)
+			_ = req.Reply(false, nil)
 		}
 	}
 }
@@ -123,17 +134,22 @@ func printDiscardRequests(c *Config, in <-chan *ssh.Request) {
 // BlockTillReady will block till the Config is ready to accept connections.
 // Returns an error if listening failed. Can be called in a concurrent fashion.
 // This is new API - make sure Init is called on the Config before using it.
-func (c *Config) BlockTillReady() error {
-	err, _ := <-c.readyChan
+func (s *SftpServer) BlockTillReady() error {
+	err, _ := <-s.readyChan
 	return err
 }
 
 // Close closes the server assosiated with this config. Can be called in a concurrent
 // fashion.
 // This is new API - make sure Init is called on the Config before using it.
-func (c *Config) Close() error {
-	for c := range c.connChan {
-		c.Close()
+func (s *SftpServer) Close() error {
+	for ch := range s.connChan {
+		_ = ch.Close()
 	}
+	s.driver.Close()
 	return nil
+}
+
+func (s *SftpServer) LogFunc(v ...interface{}) {
+	s.driver.GetConfig().LogFunc(v...)
 }
