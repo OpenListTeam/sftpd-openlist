@@ -1,4 +1,4 @@
-module github.com/KirCute/sftpd
+module github.com/KirCute/sftpd-alist
 
 go 1.23.1
 
