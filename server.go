@@ -106,10 +106,11 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			} else {
 				if ft, ok := fs.(FileSystemExtentionFileTransfer); ok {
 					var t FileTransfer
-					t, e = ft.GetHandle(f.name, f.flags, f.attr, length, offset)
+					t, e = ft.GetHandle(f.name, f.flags, f.attr, offset)
 					if e == nil {
-						n, e = t.Read(bs)
-						h.fr[handle] = t
+						br := &BufferedReader{r: t}
+						n, e = br.Read(bs)
+						h.fr[handle] = br
 					}
 				} else {
 					var file File
@@ -117,8 +118,9 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 					if e == nil {
 						_, e = file.Seek(int64(offset), io.SeekStart)
 						if e == nil {
-							n, e = file.Read(bs)
-							h.fr[handle] = file
+							br := &BufferedReader{r: file}
+							n, e = br.Read(bs)
+							h.fr[handle] = br
 						}
 					}
 				}
@@ -156,7 +158,7 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			} else {
 				if ft, ok := fs.(FileSystemExtentionFileTransfer); ok {
 					var t FileTransfer
-					t, e = ft.GetHandle(f.name, f.flags, f.attr, length, offset)
+					t, e = ft.GetHandle(f.name, f.flags, f.attr, offset)
 					if e == nil {
 						h.fw[handle] = t
 						_, e = t.Write(bs)

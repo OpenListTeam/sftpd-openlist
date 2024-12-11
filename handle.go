@@ -35,6 +35,36 @@ func (d *DirReader) Close() error {
 	return nil
 }
 
+type BufferedReader struct {
+	r   io.ReadCloser
+	eof bool
+}
+
+func (b *BufferedReader) Read(p []byte) (int, error) {
+	if b.eof {
+		return 0, io.EOF
+	}
+	num := 0
+	for {
+		n, err := b.r.Read(p[num:])
+		if err == io.EOF {
+			b.eof = true
+			return num, nil
+		} else if err != nil {
+			return num, err
+		} else {
+			num += n
+			if num >= len(p) {
+				return num, nil
+			}
+		}
+	}
+}
+
+func (b *BufferedReader) Close() error {
+	return b.r.Close()
+}
+
 type handles struct {
 	f  map[string]*FileOpenArgs
 	d  map[string]string

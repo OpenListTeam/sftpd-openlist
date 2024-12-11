@@ -107,7 +107,7 @@ type FileSystemExtentionFileTransfer interface {
 	// os.O_CREATE (upload to new file/truncate)
 	//
 	// offset is the argument of a previous REST command, if any, or 0
-	GetHandle(name string, flags uint32, attr *Attr, length uint32, offset uint64) (FileTransfer, error)
+	GetHandle(name string, flags uint32, attr *Attr, offset uint64) (FileTransfer, error)
 }
 
 // FileTransfer defines the inferface for file transfers.
