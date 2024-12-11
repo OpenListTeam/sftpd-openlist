@@ -1,6 +1,9 @@
 package sftpd
 
-import "strconv"
+import (
+	"io"
+	"strconv"
+)
 
 type FileOpenArgs struct {
 	name  string
@@ -8,10 +11,37 @@ type FileOpenArgs struct {
 	attr  *Attr
 }
 
+type DirReader struct {
+	attrs []NamedAttr
+	pos   int
+}
+
+func (d *DirReader) Readdir(count int) ([]NamedAttr, error) {
+	if d.pos >= len(d.attrs) {
+		return nil, io.EOF
+	}
+	var nextPos int
+	if d.pos+count > len(d.attrs) {
+		nextPos = len(d.attrs)
+	} else {
+		nextPos = d.pos + count
+	}
+	ret := d.attrs[d.pos:nextPos]
+	d.pos = nextPos
+	return ret, nil
+}
+
+func (d *DirReader) Close() error {
+	return nil
+}
+
 type handles struct {
-	f map[string]*FileOpenArgs
-	d map[string]string
-	c int64
+	f  map[string]*FileOpenArgs
+	d  map[string]string
+	fw map[string]io.WriteCloser
+	fr map[string]io.ReadCloser
+	dr map[string]Dir
+	c  int64
 }
 
 func (h *handles) init() {
@@ -25,8 +55,20 @@ func (h *handles) closeHandle(k string) {
 	}
 	if k[0] == 'f' {
 		delete(h.f, k)
+		if c, ok := h.fw[k]; ok {
+			_ = c.Close()
+			delete(h.fw, k)
+		}
+		if c, ok := h.fr[k]; ok {
+			_ = c.Close()
+			delete(h.fr, k)
+		}
 	} else if k[0] == 'd' {
 		delete(h.d, k)
+		if c, ok := h.dr[k]; ok {
+			_ = c.Close()
+			delete(h.dr, k)
+		}
 	}
 }
 

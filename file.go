@@ -37,8 +37,9 @@ type Dir interface {
 
 type File interface {
 	io.Closer
-	io.ReaderAt
-	io.WriterAt
+	io.Reader
+	io.Writer
+	io.Seeker
 	FStat() (*Attr, error)
 	FSetStat(*Attr) error
 }
@@ -93,7 +94,7 @@ func sftpToFileMode(raw uint32) os.FileMode {
 // From: github.com/fclairamb/ftpserverlib
 type FileSystemExtensionFileList interface {
 	// ReadDir reads the directory named by name and return a list of directory entries.
-	ReadDir(name string, count int) ([]NamedAttr, error)
+	ReadDir(name string) ([]NamedAttr, error)
 }
 
 // FileSystemExtentionFileTransfer is a convenience extension to allow to transfer files

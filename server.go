@@ -101,19 +101,26 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 				length = 64 * 1024
 			}
 			bs := bytepool.Alloc(int(length))
-			if ft, ok := fs.(FileSystemExtentionFileTransfer); ok {
-				var t FileTransfer
-				t, e = ft.GetHandle(f.name, f.flags, f.attr, length, offset)
-				if e == nil {
-					n, e = t.Read(bs)
-					_ = t.Close()
-				}
+			if reader, ok := h.fr[handle]; ok {
+				n, e = reader.Read(bs)
 			} else {
-				var file File
-				file, e = fs.OpenFile(f.name, f.flags, f.attr)
-				if e == nil {
-					n, e = file.ReadAt(bs, int64(offset))
-					_ = file.Close()
+				if ft, ok := fs.(FileSystemExtentionFileTransfer); ok {
+					var t FileTransfer
+					t, e = ft.GetHandle(f.name, f.flags, f.attr, length, offset)
+					if e == nil {
+						n, e = t.Read(bs)
+						h.fr[handle] = t
+					}
+				} else {
+					var file File
+					file, e = fs.OpenFile(f.name, f.flags, f.attr)
+					if e == nil {
+						_, e = file.Seek(int64(offset), io.SeekStart)
+						if e == nil {
+							n, e = file.Read(bs)
+							h.fr[handle] = file
+						}
+					}
 				}
 			}
 			// Handle go readers that return io.EOF and bytes at the same time.
@@ -144,19 +151,26 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			if e != nil {
 				return e
 			}
-			if ft, ok := fs.(FileSystemExtentionFileTransfer); ok {
-				var t FileTransfer
-				t, e = ft.GetHandle(f.name, f.flags, f.attr, length, offset)
-				if e == nil {
-					_, e = t.Write(bs)
-					_ = t.Close()
-				}
+			if writer, ok := h.fw[handle]; ok {
+				_, e = writer.Write(bs)
 			} else {
-				var file File
-				file, e = fs.OpenFile(f.name, f.flags, f.attr)
-				if e == nil {
-					_, e = file.WriteAt(bs, int64(offset))
-					_ = file.Close()
+				if ft, ok := fs.(FileSystemExtentionFileTransfer); ok {
+					var t FileTransfer
+					t, e = ft.GetHandle(f.name, f.flags, f.attr, length, offset)
+					if e == nil {
+						h.fw[handle] = t
+						_, e = t.Write(bs)
+					}
+				} else {
+					var file File
+					file, e = fs.OpenFile(f.name, f.flags, f.attr)
+					if e == nil {
+						_, e = file.Seek(int64(offset), io.SeekStart)
+						if e == nil {
+							h.fw[handle] = file
+							_, e = file.Write(bs)
+						}
+					}
 				}
 			}
 			e = writeErr(c, id, e)
@@ -225,14 +239,27 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 				return errInvalidHandle
 			}
 			var fis []NamedAttr
-			if frd, ok := fs.(FileSystemExtensionFileList); ok {
-				fis, e = frd.ReadDir(f, 1024)
+			if dr, ok := h.dr[handle]; ok {
+				fis, e = dr.Readdir(1024)
 			} else {
-				var dir Dir
-				dir, e = fs.OpenDir(f)
-				if e == nil {
-					fis, e = dir.Readdir(1024)
-					_ = dir.Close()
+				if frd, ok := fs.(FileSystemExtensionFileList); ok {
+					var allFis []NamedAttr
+					allFis, e = frd.ReadDir(f)
+					if e == nil {
+						dirReader := &DirReader{
+							attrs: allFis,
+							pos:   0,
+						}
+						h.dr[handle] = dirReader
+						fis, e = dirReader.Readdir(1024)
+					}
+				} else {
+					var dir Dir
+					dir, e = fs.OpenDir(f)
+					if e == nil {
+						h.dr[handle] = dir
+						fis, e = dir.Readdir(1024)
+					}
 				}
 			}
 			debug("readdir", id, handle, fis, e)
