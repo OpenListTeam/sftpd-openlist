@@ -47,6 +47,9 @@ type handles struct {
 func (h *handles) init() {
 	h.f = map[string]*FileOpenArgs{}
 	h.d = map[string]string{}
+	h.fw = map[string]io.WriteCloser{}
+	h.fr = map[string]io.ReadCloser{}
+	h.dr = map[string]Dir{}
 }
 
 func (h *handles) closeHandle(k string) {
