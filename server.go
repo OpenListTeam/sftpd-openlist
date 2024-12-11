@@ -103,7 +103,7 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			bs := bytepool.Alloc(int(length))
 			if ft, ok := fs.(FileSystemExtentionFileTransfer); ok {
 				var t FileTransfer
-				t, e = ft.GetHandle(f.name, f.flags, f.attr, int64(offset))
+				t, e = ft.GetHandle(f.name, f.flags, f.attr, length, offset)
 				if e == nil {
 					n, e = t.Read(bs)
 					_ = t.Close()
@@ -146,7 +146,7 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			}
 			if ft, ok := fs.(FileSystemExtentionFileTransfer); ok {
 				var t FileTransfer
-				t, e = ft.GetHandle(f.name, f.flags, f.attr, int64(offset))
+				t, e = ft.GetHandle(f.name, f.flags, f.attr, length, offset)
 				if e == nil {
 					_, e = t.Write(bs)
 					_ = t.Close()
