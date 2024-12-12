@@ -149,7 +149,7 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 				return errInvalidHandle
 			}
 			var bs []byte
-			e = p.NBytesPeek(int(length), &bs).End()
+			e = p.BytesPeek(int(length), &bs).End()
 			if e != nil {
 				return e
 			}

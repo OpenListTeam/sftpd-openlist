@@ -34,30 +34,6 @@ func (p *Printer) B8(d byte) *Printer {
 	return p
 }
 
-// Output a byte, synonym for .Byte.
-func (p *Printer) N8(d byte) *Printer {
-	p.w = append(p.w, d)
-	return p
-}
-
-// Output 2 native endian bytes.
-func (p *Printer) N16(d uint16) *Printer {
-	p.w = append(p.w, byte(d), byte(d>>8))
-	return p
-}
-
-// Output 4 native endian bytes.
-func (p *Printer) N32(d uint32) *Printer {
-	p.w = append(p.w, byte(d), byte(d>>8), byte(d>>16), byte(d>>24))
-	return p
-}
-
-// Output 4 native endian bytes.
-func (p *Printer) N64(d uint64) *Printer {
-	p.w = append(p.w, byte(d), byte(d>>8), byte(d>>16), byte(d>>24), byte(d>>32), byte(d>>40), byte(d>>48), byte(d>>56))
-	return p
-}
-
 var z16 = make([]byte, 16)
 
 // Align to boundary
@@ -105,32 +81,6 @@ func (p *Printer) String(d string) *Printer {
 	return p
 }
 
-// Output a string with a 4 byte native endian length prefix and no trailing null.
-func (p *Printer) N32String(d string) *Printer {
-	return p.N32(uint32(len(d))).String(d)
-}
-
-// Output bytes with a 4 byte native endian length prefix and no trailing null.
-func (p *Printer) N32Bytes(d []byte) *Printer {
-	return p.N32(uint32(len(d))).Bytes(d)
-}
-
-// Output a string with a 2 byte native endian length prefix and no trailing null.
-func (p *Printer) N16String(d string) *Printer {
-	if len(d) > 0xffff {
-		panic("binprinter: string too long")
-	}
-	return p.N16(uint16(len(d))).String(d)
-}
-
-// Output a string with a 1 byte native endian length prefix and no trailing null.
-func (p *Printer) N8String(d string) *Printer {
-	if len(d) > 0xff {
-		panic("binprinter: string too long")
-	}
-	return p.Byte(byte(len(d))).String(d)
-}
-
 // Output a string terminated by a null-byte
 func (p *Printer) String0(d string) *Printer {
 	return p.String(d).Byte(0)
@@ -147,18 +97,6 @@ func (p *Printer) LenStart(l *Len) *Printer {
 	return p
 }
 
-// Add a 16 bit field at the current location that will be filled with the length.
-func (p *Printer) LenN16(l *Len) *Printer {
-	l.ls = append(l.ls, ls{uint32(len(p.w)), 2 | lenMaskNative})
-	return p.N16(0)
-}
-
-// Add a 32 bit field at the current location that will be filled with the length.
-func (p *Printer) LenN32(l *Len) *Printer {
-	l.ls = append(l.ls, ls{uint32(len(p.w)), 4 | lenMaskNative})
-	return p.N32(0)
-}
-
 // Call LenDone for all the arguments
 func (p *Printer) LensDone(ls ...*Len) *Printer {
 	for _, l := range ls {
@@ -172,13 +110,9 @@ func (p *Printer) LenDone(l *Len) *Printer {
 	plen := len(p.w) - l.start
 	for _, ls := range l.ls {
 		switch ls.size {
-		case 2 | lenMaskNative:
-			NativeEndian.PutUint16(p.w[ls.offset:], uint16(plen))
-		case 4 | lenMaskNative:
-			NativeEndian.PutUint32(p.w[ls.offset:], uint32(plen))
-		case 2 | lenMaskBE:
+		case 2:
 			binary.BigEndian.PutUint16(p.w[ls.offset:], uint16(plen))
-		case 4 | lenMaskBE:
+		case 4:
 			binary.BigEndian.PutUint32(p.w[ls.offset:], uint32(plen))
 		}
 	}
@@ -195,8 +129,3 @@ type ls struct {
 	offset uint32
 	size   uint32
 }
-
-const (
-	lenMaskNative = 1 << 30
-	lenMaskBE     = 1 << 31
-)

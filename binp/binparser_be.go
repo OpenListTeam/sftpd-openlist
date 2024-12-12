@@ -35,23 +35,23 @@ func (p *Parser) B16(d *uint16) *Parser {
 // Parse a string with a 4 byte bigendian length prefix to a []byte pointer.
 func (p *Parser) B32Bytes(d *[]byte) *Parser {
 	var v uint32
-	return p.B32(&v).NBytes(int(v), d)
+	return p.B32(&v).Bytes(int(v), d)
 }
 
 // Parse a string with a 4 byte bigendian length prefix to a string pointer.
 func (p *Parser) B32String(d *string) *Parser {
 	var v uint32
-	return p.B32(&v).NString(int(v), d)
+	return p.B32(&v).String(int(v), d)
 }
 
 // Parse a string with a 2 byte bigendian length prefix to a string pointer.
 func (p *Parser) B16String(d *string) *Parser {
 	var v uint16
-	return p.B16(&v).NString(int(v), d)
+	return p.B16(&v).String(int(v), d)
 }
 
 // Parse a string with a 1 byte length prefix to a string pointer.
 func (p *Parser) B8String(d *string) *Parser {
 	var v uint8
-	return p.Byte(&v).NString(int(v), d)
+	return p.Byte(&v).String(int(v), d)
 }

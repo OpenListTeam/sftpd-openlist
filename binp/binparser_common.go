@@ -33,18 +33,8 @@ func (p *Parser) B8(d *byte) *Parser {
 	return p
 }
 
-// Parse a byte from the buffer, synonym for .Byte.
-func (p *Parser) N8(d *byte) *Parser {
-	if p == nil || len(p.r) < p.off+1 {
-		return nil
-	}
-	*d = p.r[p.off]
-	p.off++
-	return p
-}
-
 // Parse n bytes from the buffer and copy to a []byte pointer that is allocated.
-func (p *Parser) NBytes(n int, d *[]byte) *Parser {
+func (p *Parser) Bytes(n int, d *[]byte) *Parser {
 	if p == nil || n > len(p.r[p.off:]) {
 		return nil
 	}
@@ -55,7 +45,7 @@ func (p *Parser) NBytes(n int, d *[]byte) *Parser {
 }
 
 // Parse n bytes from the buffer and copy to the supplied []byte.
-func (p *Parser) NBytesCopy(n int, d []byte) *Parser {
+func (p *Parser) BytesCopy(n int, d []byte) *Parser {
 	if p == nil || n > len(p.r[p.off:]) {
 		return nil
 	}
@@ -65,7 +55,7 @@ func (p *Parser) NBytesCopy(n int, d []byte) *Parser {
 }
 
 // Parse n bytes from the buffer to a []byte pointer that refers to the parser internal buffer.
-func (p *Parser) NBytesPeek(n int, d *[]byte) *Parser {
+func (p *Parser) BytesPeek(n int, d *[]byte) *Parser {
 	if p == nil || n > len(p.r[p.off:]) {
 		return nil
 	}
@@ -99,7 +89,7 @@ func (p *Parser) String0(d *string) *Parser {
 	}
 	for i, ch := range p.r[p.off:] {
 		if ch == 0 {
-			p.NString(i, d)
+			p.String(i, d)
 			p.off++
 			return p
 		}
@@ -125,5 +115,16 @@ func (p *Parser) AtEnd() bool {
 // Peek the rest of input as raw bytes.
 func (p *Parser) PeekRest(d *[]byte) *Parser {
 	*d = p.r[p.off:]
+	return p
+}
+
+// Parse n bytes from the buffer to a string pointer.
+func (p *Parser) String(n int, d *string) *Parser {
+	if p == nil || n > len(p.r[p.off:]) {
+		return nil
+	}
+	bs := p.r[p.off : p.off+n]
+	*d = string(bs)
+	p.off += n
 	return p
 }
