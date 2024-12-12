@@ -152,10 +152,7 @@ func ServeChannel(c ssh.Channel, fs FileSystem, debugf DebugLogger) error {
 			var handle string
 			var offset uint64
 			var length uint32
-			e = p.B32(&id).B32String(&handle).B64(&offset).B32(&length).End()
-			if e != nil {
-				return e
-			}
+			p.B32(&id).B32String(&handle).B64(&offset).B32(&length)
 			debugf("Write id=%v handle=%s offset=%v length=%v\n", id, handle, offset, length)
 			f := h.getFile(handle)
 			if f == nil {
