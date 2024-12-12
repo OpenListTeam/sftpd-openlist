@@ -13,9 +13,12 @@ type Config struct {
 	// HostPort specifies specifies [host]:port to listen on.
 	// e.g. ":2022" or "127.0.0.1:2023".
 	HostPort string
-	// LogFunction is used to log errors.
+	// ErrorLogFunc is used to log errors.
 	// e.g. log.Println has the right type.
-	LogFunc func(v ...interface{})
+	ErrorLogFunc func(v ...interface{})
+	// DebugLogFunc is used to log debug infos.
+	// e.g. log.Printf has the right type.
+	DebugLogFunc DebugLogger
 }
 
 type SftpDriver interface {
@@ -41,12 +44,9 @@ func NewSftpServer(driver SftpDriver) *SftpServer {
 
 // RunServer runs the server using the high level API.
 func (s *SftpServer) RunServer() error {
-	if s.driver.GetConfig().LogFunc == nil {
-		s.driver.GetConfig().LogFunc = func(...interface{}) {}
-	}
 	e := runServer(s)
 	if e != nil {
-		s.LogFunc("sftpd server failed:", e)
+		s.LogError("sftpd server failed:", e)
 	}
 	return e
 }
@@ -71,10 +71,10 @@ func runServer(server *SftpServer) error {
 }
 
 func handleConn(conn net.Conn, server *SftpServer) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	e := doHandleConn(conn, server)
 	if e != nil {
-		server.LogFunc("sftpd connection error:", e)
+		server.LogError("sftpd connection error:", e)
 	}
 }
 
@@ -83,7 +83,7 @@ func doHandleConn(conn net.Conn, server *SftpServer) error {
 	if e != nil {
 		return e
 	}
-	defer sc.Close()
+	defer func() { _ = sc.Close() }()
 
 	// The incoming Request channel must be serviced.
 	go printDiscardRequests(server, reqs)
@@ -108,10 +108,16 @@ func doHandleConn(conn net.Conn, server *SftpServer) error {
 					go func() {
 						fs, e := server.driver.GetFileSystem(sc)
 						if e == nil {
-							e = ServeChannel(channel, fs)
+							var debugf DebugLogger
+							if server.driver.GetConfig().DebugLogFunc != nil {
+								debugf = server.driver.GetConfig().DebugLogFunc
+							} else {
+								debugf = func(s string, v ...interface{}) {}
+							}
+							e = ServeChannel(channel, fs, debugf)
 						}
 						if e != nil {
-							server.LogFunc("sftpd servechannel failed:", e)
+							server.LogError("sftpd servechannel failed:", e)
 						}
 					}()
 				}
@@ -124,7 +130,7 @@ func doHandleConn(conn net.Conn, server *SftpServer) error {
 
 func printDiscardRequests(c *SftpServer, in <-chan *ssh.Request) {
 	for req := range in {
-		c.LogFunc("sftpd discarding ssh request", req.Type, *req)
+		c.LogError("sftpd discarding ssh request", req.Type, *req)
 		if req.WantReply {
 			_ = req.Reply(false, nil)
 		}
@@ -150,6 +156,8 @@ func (s *SftpServer) Close() error {
 	return nil
 }
 
-func (s *SftpServer) LogFunc(v ...interface{}) {
-	s.driver.GetConfig().LogFunc(v...)
+func (s *SftpServer) LogError(v ...interface{}) {
+	if s.driver.GetConfig().ErrorLogFunc != nil {
+		s.driver.GetConfig().ErrorLogFunc(v...)
+	}
 }

@@ -1,14 +1,10 @@
-// +build debug
-
 package sftpd
 
-import (
-	"log"
-	"strconv"
-)
+import "strconv"
 
-var debug func(...interface{}) = log.Println
-var debugf func(string, ...interface{}) = log.Printf
+// These are used to get more pretty debugging output.
+type ssh_fxp byte
+type ssh_fx byte
 
 func (b ssh_fxp) String() string {
 	s := ssh_fxp_map[b]

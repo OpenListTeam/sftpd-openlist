@@ -24,9 +24,11 @@ func IsSftpRequest(req *ssh.Request) bool {
 
 var initReply = []byte{0, 0, 0, 5, ssh_FXP_VERSION, 0, 0, 0, 3}
 
+type DebugLogger func(s string, v ...interface{})
+
 // ServeChannel serves a ssh.Channel with the given FileSystem.
-func ServeChannel(c ssh.Channel, fs FileSystem) error {
-	defer c.Close()
+func ServeChannel(c ssh.Channel, fs FileSystem, debugf DebugLogger) error {
+	defer func() { _ = c.Close() }()
 	var h handles
 	h.init()
 	brd := bufio.NewReaderSize(c, 64*1024)
@@ -37,13 +39,13 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 	var id uint32
 	for {
 		if e != nil {
-			debug("Sending error", e)
-			e = writeErr(c, id, e)
+			debugf("Sending error: %v\n", e)
+			e = writeErr(c, id, e, debugf)
 			if e != nil {
 				return e
 			}
 		}
-		discard(brd, plen)
+		_ = discard(brd, plen)
 		plen, op, e = readPacketHeader(brd)
 		if e != nil {
 			return e
@@ -62,6 +64,7 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 		p := binp.NewParser(bs)
 		switch op {
 		case ssh_FXP_INIT:
+			debugf("Init %v\n", initReply)
 			e = wrc(c, initReply)
 		case ssh_FXP_OPEN:
 			var path string
@@ -71,19 +74,23 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			if e != nil {
 				return e
 			}
+			debugf("Open id=%v path=%s flags=%v\n", id, path, flags)
 			if h.nfiles() >= maxFiles {
 				e = errTooManyFiles
 				continue
 			}
-			e = writeHandle(c, id, h.newFile(&FileOpenArgs{path, flags, &a}))
+			handle := h.newFile(&FileOpenArgs{path, flags, &a})
+			debugf("Open ret: handle=%s\n", handle)
+			e = writeHandle(c, id, handle)
 		case ssh_FXP_CLOSE:
 			var handle string
 			e = p.B32(&id).B32String(&handle).End()
 			if e != nil {
 				return e
 			}
+			debugf("Close id=%v handle=%s\n", id, handle)
 			h.closeHandle(handle)
-			e = writeErr(c, id, nil)
+			e = writeErr(c, id, nil, debugf)
 		case ssh_FXP_READ:
 			var handle string
 			var offset uint64
@@ -93,6 +100,7 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			if e != nil {
 				return e
 			}
+			debugf("Read id=%v handle=%s offset=%v length=%v\n", id, handle, offset, length)
 			f := h.getFile(handle)
 			if f == nil {
 				return errInvalidHandle
@@ -127,6 +135,7 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			}
 			// Handle go readers that return io.EOF and bytes at the same time.
 			if e == io.EOF && n > 0 {
+				debugf("Read EOF, n=%d\n", n)
 				e = nil
 			}
 			if e != nil {
@@ -143,7 +152,11 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			var handle string
 			var offset uint64
 			var length uint32
-			p.B32(&id).B32String(&handle).B64(&offset).B32(&length)
+			e = p.B32(&id).B32String(&handle).B64(&offset).B32(&length).End()
+			if e != nil {
+				return e
+			}
+			debugf("Write id=%v handle=%s offset=%v length=%v\n", id, handle, offset, length)
 			f := h.getFile(handle)
 			if f == nil {
 				return errInvalidHandle
@@ -175,7 +188,7 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 					}
 				}
 			}
-			e = writeErr(c, id, e)
+			e = writeErr(c, id, e, debugf)
 		case ssh_FXP_LSTAT, ssh_FXP_STAT:
 			var path string
 			var a *Attr
@@ -183,9 +196,10 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			if e != nil {
 				return e
 			}
+			debugf("Stat/Lstat id=%d path=%s\n", id, path)
 			a, e = fs.Stat(path, op == ssh_FXP_LSTAT)
-			debug("stat/lstat", path, "=>", a, e)
-			e = writeAttr(c, id, a, e)
+			debugf("Stat/Lstat ret: %v %v\n", a, e)
+			e = writeAttr(c, id, a, e, debugf)
 		case ssh_FXP_FSTAT:
 			var handle string
 			var a *Attr
@@ -193,12 +207,14 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			if e != nil {
 				return e
 			}
+			debugf("Fstat id=%d handle=%s\n", id, handle)
 			f := h.getFile(handle)
 			if f == nil {
 				return errInvalidHandle
 			}
 			a, e = fs.Stat(f.name, false)
-			e = writeAttr(c, id, a, e)
+			debugf("Fstat ret: %v %v\n", a, e)
+			e = writeAttr(c, id, a, e, debugf)
 		case ssh_FXP_SETSTAT:
 			var path string
 			var a Attr
@@ -206,7 +222,8 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			if e != nil {
 				return e
 			}
-			e = writeErr(c, id, fs.SetStat(path, &a))
+			debugf("SetStat id=%d path=%s\n", id, path)
+			e = writeErr(c, id, fs.SetStat(path, &a), debugf)
 		case ssh_FXP_FSETSTAT:
 			var handle string
 			var a Attr
@@ -214,28 +231,32 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			if e != nil {
 				return e
 			}
+			debugf("FSetStat id=%d handle=%s\n", id, handle)
 			f := h.getFile(handle)
 			if f == nil {
 				return errInvalidHandle
 			}
-			e = writeErr(c, id, fs.SetStat(f.name, &a))
+			e = writeErr(c, id, fs.SetStat(f.name, &a), debugf)
 		case ssh_FXP_OPENDIR:
 			var path string
 			e = p.B32(&id).B32String(&path).End()
 			if e != nil {
 				return e
 			}
-			debug("opendir", id, path, "=>", path, e)
+			debugf("Opendir id=%d path=%s\n", id, path)
 			if e != nil {
 				continue
 			}
-			e = writeHandle(c, id, h.newDir(path))
+			handle := h.newDir(path)
+			debugf("Opendir ret: handle=%s\n", handle)
+			e = writeHandle(c, id, handle)
 		case ssh_FXP_READDIR:
 			var handle string
 			e = p.B32(&id).B32String(&handle).End()
 			if e != nil {
 				return e
 			}
+			debugf("Readdir id=%d handle=%s\n", id, handle)
 			f := h.getDir(handle)
 			if f == "" {
 				return errInvalidHandle
@@ -264,7 +285,7 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 					}
 				}
 			}
-			debug("readdir", id, handle, fis, e)
+			debugf("Readdir ret: %v => %v\n", fis, e)
 			if e != nil {
 				continue
 			}
@@ -294,7 +315,8 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			if e != nil {
 				return e
 			}
-			e = writeErr(c, id, fs.Remove(path))
+			debugf("Remove id=%d path=%s\n", id, path)
+			e = writeErr(c, id, fs.Remove(path), debugf)
 		case ssh_FXP_MKDIR:
 			var path string
 			var a Attr
@@ -303,34 +325,50 @@ func ServeChannel(c ssh.Channel, fs FileSystem) error {
 			if e != nil {
 				return e
 			}
-			e = writeErr(c, id, fs.Mkdir(path, &a))
+			debugf("Mkdir id=%d path=%s\n", id, path)
+			e = writeErr(c, id, fs.Mkdir(path, &a), debugf)
 		case ssh_FXP_RMDIR:
 			var path string
 			e = p.B32(&id).B32String(&path).End()
 			if e != nil {
 				return e
 			}
-			e = writeErr(c, id, fs.Rmdir(path))
+			debugf("Rmdir id=%d path=%s\n", id, path)
+			e = writeErr(c, id, fs.Rmdir(path), debugf)
 		case ssh_FXP_REALPATH:
 			var path, newpath string
 			e = p.B32(&id).B32String(&path).End()
+			if e != nil {
+				return e
+			}
+			debugf("RealPath id=%d path=%s\n", id, path)
 			newpath, e = fs.RealPath(path)
-			debug("realpath: mapping", path, "=>", newpath, e)
-			e = writeNameOnly(c, id, newpath, e)
+			debugf("RealPath ret %s => %v\n", newpath, e)
+			e = writeNameOnly(c, id, newpath, e, debugf)
 		case ssh_FXP_RENAME:
 			var oldName, newName string
 			var flags uint32
 			e = p.B32(&id).B32String(&oldName).B32String(&newName).B32(&flags).End()
-			e = writeErr(c, id, fs.Rename(oldName, newName, flags))
+			if e != nil {
+				return e
+			}
+			debugf("Rename id=%d oldName=%s newName=%s flags=%x\n", id, oldName, newName, flags)
+			e = writeErr(c, id, fs.Rename(oldName, newName, flags), debugf)
 		case ssh_FXP_READLINK:
 			var path string
 			e = p.B32(&id).B32String(&path).End()
+			if e != nil {
+				return e
+			}
+			debugf("ReadLink id=%d path=%s\n", id, path)
 			path, e = fs.ReadLink(path)
-			e = writeNameOnly(c, id, path, e)
+			debugf("ReadLink ret %s\n", path)
+			e = writeNameOnly(c, id, path, e, debugf)
 		case ssh_FXP_SYMLINK:
-			e = writeErrCode(c, id, ssh_FX_OP_UNSUPPORTED)
+			e = writeErrCode(c, id, ssh_FX_OP_UNSUPPORTED, debugf)
 		}
 		if e != nil {
+			debugf("Fatal error: %v\n", e)
 			return e
 		}
 	}
@@ -384,9 +422,9 @@ func parseAttr(p *binp.Parser, a *Attr) *binp.Parser {
 	return p
 }
 
-func writeAttr(c ssh.Channel, id uint32, a *Attr, e error) error {
+func writeAttr(c ssh.Channel, id uint32, a *Attr, e error, debugf DebugLogger) error {
 	if e != nil {
-		return writeErr(c, id, e)
+		return writeErr(c, id, e, debugf)
 	}
 	var l binp.Len
 	o := binp.Out().LenB32(&l).LenStart(&l).Byte(ssh_FXP_ATTRS).B32(id).B32(a.Flags)
@@ -413,9 +451,9 @@ func writeAttr(c ssh.Channel, id uint32, a *Attr, e error) error {
 	return wrc(c, o.Out())
 }
 
-func writeNameOnly(c ssh.Channel, id uint32, path string, e error) error {
+func writeNameOnly(c ssh.Channel, id uint32, path string, e error, debugf DebugLogger) error {
 	if e != nil {
-		return writeErr(c, id, e)
+		return writeErr(c, id, e, debugf)
 	}
 	var l binp.Len
 	o := binp.Out().LenB32(&l).LenStart(&l).Byte(ssh_FXP_NAME).B32(id).B32(1)
@@ -433,16 +471,16 @@ func writeFail(c ssh.Channel, id uint32) error {
 	return wrc(c, bs)
 }
 
-func writeErrCode(c ssh.Channel, id uint32, code ssh_fx) error {
+func writeErrCode(c ssh.Channel, id uint32, code ssh_fx, debugf DebugLogger) error {
 	bs := make([]byte, len(failTmpl))
 	copy(bs, failTmpl)
 	binary.BigEndian.PutUint32(bs[5:], id)
-	debug("Sending sftp error code", code)
+	debugf("Sending sftp error code %v\n", code)
 	bs[12] = byte(code)
 	return wrc(c, bs)
 }
 
-func writeErr(c ssh.Channel, id uint32, err error) error {
+func writeErr(c ssh.Channel, id uint32, err error, debugf DebugLogger) error {
 	var code ssh_fx
 	switch {
 	case err == nil:
@@ -456,7 +494,7 @@ func writeErr(c ssh.Channel, id uint32, err error) error {
 	default:
 		code = ssh_FX_FAILURE
 	}
-	return writeErrCode(c, id, code)
+	return writeErrCode(c, id, code, debugf)
 }
 
 func writeHandle(c ssh.Channel, id uint32, handle string) error {

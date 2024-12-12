@@ -36,24 +36,17 @@ func (d *DirReader) Close() error {
 }
 
 type BufferedReader struct {
-	r   io.ReadCloser
-	eof bool
+	r io.ReadCloser
 }
 
 func (b *BufferedReader) Read(p []byte) (int, error) {
-	if b.eof {
-		return 0, io.EOF
-	}
 	num := 0
 	for {
 		n, err := b.r.Read(p[num:])
-		if err == io.EOF {
-			b.eof = true
-			return num, nil
-		} else if err != nil {
+		num += n
+		if err != nil {
 			return num, err
 		} else {
-			num += n
 			if num >= len(p) {
 				return num, nil
 			}
