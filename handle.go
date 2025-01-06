@@ -36,33 +36,78 @@ func (d *DirReader) Close() error {
 }
 
 type BufferedReader struct {
-	r io.ReadCloser
+	r   io.ReadSeekCloser
+	cur int64
 }
 
-func (b *BufferedReader) Read(p []byte) (int, error) {
-	num := 0
-	for {
-		n, err := b.r.Read(p[num:])
-		num += n
+func (b *BufferedReader) ReadAt(p []byte, off int64) (int, error) {
+	if off != b.cur {
+		o, err := b.r.Seek(off, io.SeekStart)
 		if err != nil {
-			return num, err
-		} else {
-			if num >= len(p) {
-				return num, nil
-			}
+			return 0, err
+		}
+		b.cur = o
+	}
+	num := 0
+	var err error
+	for {
+		var n int
+		n, err = b.r.Read(p[num:])
+		num += n
+		if err != nil || num >= len(p) {
+			break
 		}
 	}
+	b.cur += int64(num)
+	return num, err
 }
 
 func (b *BufferedReader) Close() error {
 	return b.r.Close()
 }
 
+type WriteSeekCloser interface {
+	io.WriteSeeker
+	io.Closer
+}
+
+type AutoSeekWriter struct {
+	w   WriteSeekCloser
+	cur int64
+}
+
+func (a *AutoSeekWriter) WriteAt(p []byte, off int64) (int, error) {
+	if off != a.cur {
+		o, err := a.w.Seek(off, io.SeekStart)
+		if err != nil {
+			return 0, err
+		}
+		a.cur = o
+	}
+	n, err := a.w.Write(p)
+	a.cur += int64(n)
+	return n, err
+}
+
+func (a *AutoSeekWriter) Close() error {
+	return a.w.Close()
+}
+
+type WriteAtCloser interface {
+	io.WriterAt
+	io.Closer
+}
+
+type ReadAtCloser interface {
+	io.ReaderAt
+	io.Closer
+}
+
 type handles struct {
 	f  map[string]*FileOpenArgs
 	d  map[string]string
-	fw map[string]io.WriteCloser
-	fr map[string]io.ReadCloser
+	fw map[string]WriteAtCloser
+	fr map[string]ReadAtCloser
 	dr map[string]Dir
 	c  int64
 }
@@ -70,8 +115,8 @@ type handles struct {
 func (h *handles) init() {
 	h.f = map[string]*FileOpenArgs{}
 	h.d = map[string]string{}
-	h.fw = map[string]io.WriteCloser{}
-	h.fr = map[string]io.ReadCloser{}
+	h.fw = map[string]WriteAtCloser{}
+	h.fr = map[string]ReadAtCloser{}
 	h.dr = map[string]Dir{}
 }
 

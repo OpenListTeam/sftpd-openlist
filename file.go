@@ -36,10 +36,7 @@ type Dir interface {
 }
 
 type File interface {
-	io.Closer
-	io.Reader
-	io.Writer
-	io.Seeker
+	FileTransfer
 	FStat() (*Attr, error)
 	FSetStat(*Attr) error
 }
@@ -115,5 +112,6 @@ type FileSystemExtentionFileTransfer interface {
 type FileTransfer interface {
 	io.Reader
 	io.Writer
+	io.Seeker
 	io.Closer
 }

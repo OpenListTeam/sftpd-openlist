@@ -7,7 +7,6 @@ import (
 	"errors"
 	"github.com/KirCute/sftpd-alist/binp"
 	"io"
-	"io/ioutil"
 	"os"
 	"time"
 
@@ -110,24 +109,26 @@ func ServeChannel(c ssh.Channel, fs FileSystem, debugf DebugLogger) error {
 			}
 			bs := bytepool.Alloc(int(length))
 			if reader, ok := h.fr[handle]; ok {
-				n, e = reader.Read(bs)
+				n, e = reader.ReadAt(bs, int64(offset))
 			} else {
 				if ft, ok := fs.(FileSystemExtentionFileTransfer); ok {
 					var t FileTransfer
 					t, e = ft.GetHandle(f.name, f.flags, f.attr, offset)
 					if e == nil {
-						br := &BufferedReader{r: t}
-						n, e = br.Read(bs)
+						br := &BufferedReader{r: t, cur: int64(offset)}
+						n, e = br.ReadAt(bs, int64(offset))
 						h.fr[handle] = br
 					}
 				} else {
 					var file File
 					file, e = fs.OpenFile(f.name, f.flags, f.attr)
 					if e == nil {
-						_, e = file.Seek(int64(offset), io.SeekStart)
+						if offset != 0 {
+							_, e = file.Seek(int64(offset), io.SeekStart)
+						}
 						if e == nil {
-							br := &BufferedReader{r: file}
-							n, e = br.Read(bs)
+							br := &BufferedReader{r: file, cur: int64(offset)}
+							n, e = br.ReadAt(bs, int64(offset))
 							h.fr[handle] = br
 						}
 					}
@@ -164,23 +165,27 @@ func ServeChannel(c ssh.Channel, fs FileSystem, debugf DebugLogger) error {
 				return e
 			}
 			if writer, ok := h.fw[handle]; ok {
-				_, e = writer.Write(bs)
+				_, e = writer.WriteAt(bs, int64(offset))
 			} else {
 				if ft, ok := fs.(FileSystemExtentionFileTransfer); ok {
 					var t FileTransfer
 					t, e = ft.GetHandle(f.name, f.flags, f.attr, offset)
 					if e == nil {
-						h.fw[handle] = t
-						_, e = t.Write(bs)
+						aw := &AutoSeekWriter{w: t, cur: int64(offset)}
+						_, e = aw.WriteAt(bs, int64(offset))
+						h.fw[handle] = aw
 					}
 				} else {
 					var file File
 					file, e = fs.OpenFile(f.name, f.flags, f.attr)
 					if e == nil {
-						_, e = file.Seek(int64(offset), io.SeekStart)
+						if offset != 0 {
+							_, e = file.Seek(int64(offset), io.SeekStart)
+						}
 						if e == nil {
-							h.fw[handle] = file
-							_, e = file.Write(bs)
+							aw := &AutoSeekWriter{w: file, cur: int64(offset)}
+							_, e = aw.WriteAt(bs, int64(offset))
+							h.fw[handle] = aw
 						}
 					}
 				}
@@ -507,7 +512,7 @@ func discard(brd *bufio.Reader, n int) error {
 	if n == 0 {
 		return nil
 	}
-	m, e := io.Copy(ioutil.Discard, &io.LimitedReader{R: brd, N: int64(n)})
+	m, e := io.Copy(io.Discard, &io.LimitedReader{R: brd, N: int64(n)})
 	if int(m) == n && e == io.EOF {
 		e = nil
 	}
