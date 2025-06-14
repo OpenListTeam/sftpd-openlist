@@ -5,11 +5,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"github.com/KirCute/sftpd-alist/binp"
 	"io"
 	"os"
 	"time"
 
+	"github.com/OpenListTeam/sftpd-openlist/binp"
 	"github.com/taruti/bytepool"
 	"golang.org/x/crypto/ssh"
 )
